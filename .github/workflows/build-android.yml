@@ -1,0 +1,55 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Jenis build"
+        type: choice
+        default: release
+        options: [ release, debug ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ambil source Externals (pengganti submodule)
+        run: bash .github/scripts/fetch-externals.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Pasang NDK dan CMake
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('Source/Android/**/*.gradle', 'Source/Android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build APK
+        working-directory: Source/Android
+        run: |
+          chmod +x gradlew
+          TYPE="${{ github.event.inputs.build_type || 'release' }}"
+          if [ "$TYPE" = "debug" ]; then ./gradlew assembleDebug --no-daemon --stacktrace
+          else ./gradlew assembleRelease --no-daemon --stacktrace; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dolphin-MMJR2-apk
+          path: Source/Android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
